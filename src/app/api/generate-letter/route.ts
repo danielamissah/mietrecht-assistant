@@ -1,109 +1,116 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { LetterInput } from '@/types';
-import { validateServerEnv } from '@/lib/validateEnv';
-
-export async function POST(req: NextRequest) {
-  // Validate required env vars before doing anything else
-  try {
-    validateServerEnv();
-  } catch (e: any) {
-    console.error(e.message);
-    return NextResponse.json({ error: e.message }, { status: 500 });
-  }
 
 // Dispute-specific system prompts.
 // Each instructs the model to act as a Mieterverein legal advisor
-// and produce letters citing the correct BGB paragraphs.
-// Temperature 0.3 keeps legal citations consistent across generations.
+// and produce a letter citing the correct BGB paragraphs.
+// Temperature 0.3 keeps legal citations consistent and structured.
 const DISPUTE_PROMPTS: Record<string, string> = {
-  mietpreisbremse: `You are a legal advisor at a German Mieterverein.
-Write a formal Rüge letter invoking the Mietpreisbremse under §556d BGB.
-The letter must:
-- State that the tenant formally invokes their right under §556d BGB
-- Request the landlord provide proof of the Ausgangsmiete and any Modernisierungsmaßnahmen
-- Set a written response deadline of 30 days
-- Use formal German legal register throughout
-- Include Betreff, formal Anrede, structured body, and Hochachtungsvoll closing`,
+  mietpreisbremse: [
+    'You are a legal advisor at a German Mieterverein.',
+    'Write a formal Rüge letter invoking the Mietpreisbremse under §556d BGB.',
+    'The letter must:',
+    '- State that the tenant formally invokes their right under §556d BGB',
+    '- Request the landlord provide proof of the Ausgangsmiete and any Modernisierungsmaßnahmen',
+    '- Set a written response deadline of 30 days',
+    '- Use formal German legal register throughout',
+    '- Include Betreff, formal Anrede, structured body, and Hochachtungsvoll closing',
+  ].join('\n'),
 
-  deposit: `You are a legal advisor at a German Mieterverein.
-Write a formal letter disputing an unlawful Kautionsabzug under §548 and §551 BGB.
-The letter must:
-- Reference §548 BGB (limitation period for landlord claims)
-- Reference §551 BGB (maximum deposit of 3 cold months rent)
-- Demand itemised written justification for each deduction within 14 days
-- State that unjustified deductions will be pursued through legal channels
-- Use formal German legal register throughout`,
+  deposit: [
+    'You are a legal advisor at a German Mieterverein.',
+    'Write a formal letter disputing an unlawful Kautionsabzug under §548 and §551 BGB.',
+    'The letter must:',
+    '- Reference §548 BGB (limitation period for landlord claims)',
+    '- Reference §551 BGB (maximum deposit of 3 cold months rent)',
+    '- Demand itemised written justification for each deduction within 14 days',
+    '- State that unjustified deductions will be pursued through legal channels',
+    '- Use formal German legal register throughout',
+  ].join('\n'),
 
-  repair: `You are a legal advisor at a German Mieterverein.
-Write a formal Mängelanzeige under §535 BGB.
-The letter must:
-- Formally notify the landlord of the specific defect in writing
-- Set a Frist of 14 days for repair
-- State that if unresolved the tenant reserves the right to Mietminderung under §536 BGB
-- Reference the landlord maintenance duty under §535 Abs. 1 Satz 2 BGB
-- Use formal German legal register throughout`,
+  repair: [
+    'You are a legal advisor at a German Mieterverein.',
+    'Write a formal Mängelanzeige under §535 BGB.',
+    'The letter must:',
+    '- Formally notify the landlord of the specific defect in writing',
+    '- Set a Frist of 14 days for repair',
+    '- State that if unresolved the tenant reserves the right to Mietminderung under §536 BGB',
+    '- Reference the landlord maintenance duty under §535 Abs. 1 Satz 2 BGB',
+    '- Use formal German legal register throughout',
+  ].join('\n'),
 
-  nebenkosten: `You are a legal advisor at a German Mieterverein.
-Write a formal letter disputing a Betriebskostenabrechnung under §556 BGB.
-The letter must:
-- Reference §556 BGB and the BetrKV
-- Request Belegeinsicht within 30 days
-- Note the tenants 12-month right to dispute from date of receipt
-- Flag disallowable cost categories under §2 BetrKV if mentioned
-- Use formal German legal register throughout`,
+  nebenkosten: [
+    'You are a legal advisor at a German Mieterverein.',
+    'Write a formal letter disputing a Betriebskostenabrechnung under §556 BGB.',
+    'The letter must:',
+    '- Reference §556 BGB and the BetrKV',
+    '- Request Belegeinsicht within 30 days',
+    '- Note the tenants 12-month right to dispute from date of receipt',
+    '- Flag disallowable cost categories under §2 BetrKV if mentioned',
+    '- Use formal German legal register throughout',
+  ].join('\n'),
 
-  kundigung: `You are a legal advisor at a German Mieterverein.
-Write a formal Widerspruch challenging a Kündigung under §574 BGB.
-The letter must:
-- Formally object under §574 BGB Sozialklausel
-- Request detailed Eigenbedarf justification under §573 BGB
-- State clearly that the tenant does not accept the Kündigung as legally valid
-- Demand written confirmation of receipt
-- Use formal German legal register throughout`,
+  kundigung: [
+    'You are a legal advisor at a German Mieterverein.',
+    'Write a formal Widerspruch challenging a Kündigung under §574 BGB.',
+    'The letter must:',
+    '- Formally object under §574 BGB Sozialklausel',
+    '- Request detailed Eigenbedarf justification under §573 BGB',
+    '- State clearly that the tenant does not accept the Kündigung as legally valid',
+    '- Demand written confirmation of receipt',
+    '- Use formal German legal register throughout',
+  ].join('\n'),
 };
 
 function buildUserPrompt(input: LetterInput, language: 'de' | 'en'): string {
   const today = new Date().toLocaleDateString('de-DE', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
   });
 
-  const base = `
-Tenant: ${input.tenantName}
-Tenant address: ${input.tenantAddress || 'not provided'}
-Landlord: ${input.landlordName}
-Landlord address: ${input.landlordAddress || 'not provided'}
-Rental property: ${input.rentalAddress || 'not provided'}
-Move-in date: ${input.moveInDate || 'not provided'}
-Current monthly rent: ${input.currentRent ? `€${input.currentRent}` : 'not provided'}
-Situation: ${input.details}
-Today's date: ${today}`;
+  const details = [
+    'Tenant: ' + input.tenantName,
+    'Tenant address: ' + (input.tenantAddress || 'not provided'),
+    'Landlord: ' + input.landlordName,
+    'Landlord address: ' + (input.landlordAddress || 'not provided'),
+    'Rental property: ' + (input.rentalAddress || 'not provided'),
+    'Move-in date: ' + (input.moveInDate || 'not provided'),
+    'Current monthly rent: ' + (input.currentRent ? input.currentRent + ' EUR' : 'not provided'),
+    'Situation: ' + input.details,
+    'Today\'s date: ' + today,
+  ].join('\n');
 
   if (language === 'de') {
-    return `Generate the letter with these details:
-${base}
-
-Write a complete professional letter in formal German. Include:
-- Date and city top right
-- Sender address block top left
-- Recipient address block
-- Betreff bold subject line
-- Anrede formal using landlord name if provided
-- Body with correct legal citations
-- Fristsetzung where appropriate
-- Closing Hochachtungsvoll
-- Signature line with tenant name`;
+    return [
+      'Generate the letter with these details:',
+      details,
+      '',
+      'Write a complete professional letter in formal German. Include:',
+      '- Date and city top right',
+      '- Sender address block top left',
+      '- Recipient address block',
+      '- Betreff bold subject line',
+      '- Anrede formal using landlord name if provided',
+      '- Body with correct legal citations',
+      '- Fristsetzung where appropriate',
+      '- Closing Hochachtungsvoll',
+      '- Signature line with tenant name',
+    ].join('\n');
   }
 
-  return `Generate an English translation and explanation of the following German legal letter.
-${base}
-
-Write a clear English version that:
-- Maintains the same formal legal structure
-- Translates all German legal terms with brief explanations in parentheses
-- Keeps all BGB paragraph references
-- Uses British English formal letter format
-- Adds a note at the top: "ENGLISH VERSION - For reference only. Send the German version to your landlord."`;
+  return [
+    'Generate an English translation and explanation of the following German legal letter.',
+    details,
+    '',
+    'Write a clear English version that:',
+    '- Maintains the same formal legal structure',
+    '- Translates all German legal terms with brief explanations in parentheses',
+    '- Keeps all BGB paragraph references',
+    '- Uses British English formal letter format',
+    '- Adds a note at the top: ENGLISH VERSION - For reference only. Send the German version to your landlord.',
+  ].join('\n');
 }
 
 export async function POST(req: NextRequest) {
@@ -115,6 +122,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Initialise inside the handler to avoid cold start module issues
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   let input: LetterInput;
@@ -131,9 +139,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    console.log('Generating both DE and EN letters for dispute type:', input.disputeType);
+    console.log('Generating DE + EN letters for dispute type:', input.disputeType);
 
-    // Generate both letters in parallel — faster than sequential calls
+    // Generate both letters in parallel — faster than two sequential calls
     const [deResponse, enResponse] = await Promise.all([
       groq.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
@@ -166,6 +174,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log('Letters generated — DE:', letterDE.length, 'chars, EN:', letterEN.length, 'chars');
     return NextResponse.json({ letterDE, letterEN });
 
   } catch (error: any) {
@@ -177,10 +186,11 @@ export async function POST(req: NextRequest) {
 
     if (error?.status === 401) {
       return NextResponse.json(
-        { error: 'Invalid Groq API key. Check your .env.local file.' },
+        { error: 'Invalid Groq API key. Check your environment variables.' },
         { status: 500 }
       );
     }
+
     if (error?.status === 429) {
       return NextResponse.json(
         { error: 'Rate limit reached. Please wait a moment and try again.' },
