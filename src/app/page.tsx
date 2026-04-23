@@ -159,7 +159,7 @@ export default function Home() {
               <h2 style={{ fontSize: 'clamp(15px, 4vw, 18px)', fontWeight: 700, color: '#0D5C63', marginBottom: '16px' }}>
                 {t.rightsTitle}
               </h2>
-              <RightsGuide t={t} />
+              <RightsGuide t={t} lang={lang} />
             </>
           )}
           {tab === 'rentcheck' && (
