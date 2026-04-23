@@ -94,7 +94,13 @@ export const t = {
     // Common
     updatedFor: '2025',
     learnMore: 'Learn more →',
-    backToHome: '← Back',
+        backToHome: '← Back',
+    //Letter
+    letterDE: 'German Letter (send this)',
+    letterEN: 'English Version (for your reference)',
+    letterDownloadDE: 'Download German (.txt)',
+    letterDownloadEN: 'Download English (.txt)',
+    letterGeneratingBoth: 'Generating German + English letters…',
   },
 
   de: {
@@ -182,7 +188,14 @@ export const t = {
 
     updatedFor: '2025',
     learnMore: 'Mehr erfahren →',
-    backToHome: '← Zurück',
+      backToHome: '← Zurück',
+    
+    //Letter
+    letterDE: 'Deutscher Brief (zum Versenden)',
+    letterEN: 'Englische Version (zur Übersicht)',
+    letterDownloadDE: 'Deutsch herunterladen (.txt)',
+    letterDownloadEN: 'Englisch herunterladen (.txt)',
+    letterGeneratingBoth: 'Deutsch + Englisch wird erstellt…',
   },
 } as const;
 

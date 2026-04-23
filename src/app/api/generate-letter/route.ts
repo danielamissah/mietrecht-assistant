@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { LetterInput } from '@/types';
+import { validateServerEnv } from '@/lib/validateEnv';
+
+export async function POST(req: NextRequest) {
+  // Validate required env vars before doing anything else
+  try {
+    validateServerEnv();
+  } catch (e: any) {
+    console.error(e.message);
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
 
 // Dispute-specific system prompts.
 // Each instructs the model to act as a Mieterverein legal advisor
-// and produce a letter citing the correct BGB paragraphs.
-// Temperature 0.3 keeps legal citations consistent and structured.
+// and produce letters citing the correct BGB paragraphs.
+// Temperature 0.3 keeps legal citations consistent across generations.
 const DISPUTE_PROMPTS: Record<string, string> = {
   mietpreisbremse: `You are a legal advisor at a German Mieterverein.
 Write a formal Rüge letter invoking the Mietpreisbremse under §556d BGB.
@@ -53,6 +63,49 @@ The letter must:
 - Use formal German legal register throughout`,
 };
 
+function buildUserPrompt(input: LetterInput, language: 'de' | 'en'): string {
+  const today = new Date().toLocaleDateString('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+
+  const base = `
+Tenant: ${input.tenantName}
+Tenant address: ${input.tenantAddress || 'not provided'}
+Landlord: ${input.landlordName}
+Landlord address: ${input.landlordAddress || 'not provided'}
+Rental property: ${input.rentalAddress || 'not provided'}
+Move-in date: ${input.moveInDate || 'not provided'}
+Current monthly rent: ${input.currentRent ? `€${input.currentRent}` : 'not provided'}
+Situation: ${input.details}
+Today's date: ${today}`;
+
+  if (language === 'de') {
+    return `Generate the letter with these details:
+${base}
+
+Write a complete professional letter in formal German. Include:
+- Date and city top right
+- Sender address block top left
+- Recipient address block
+- Betreff bold subject line
+- Anrede formal using landlord name if provided
+- Body with correct legal citations
+- Fristsetzung where appropriate
+- Closing Hochachtungsvoll
+- Signature line with tenant name`;
+  }
+
+  return `Generate an English translation and explanation of the following German legal letter.
+${base}
+
+Write a clear English version that:
+- Maintains the same formal legal structure
+- Translates all German legal terms with brief explanations in parentheses
+- Keeps all BGB paragraph references
+- Uses British English formal letter format
+- Adds a note at the top: "ENGLISH VERSION - For reference only. Send the German version to your landlord."`;
+}
+
 export async function POST(req: NextRequest) {
   if (!process.env.GROQ_API_KEY) {
     console.error('GROQ_API_KEY is not set in environment variables');
@@ -62,7 +115,6 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Initialise inside the handler to avoid cold start issues
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   let input: LetterInput;
@@ -78,62 +130,43 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid dispute type' }, { status: 400 });
   }
 
-  const today = new Date().toLocaleDateString('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-
-  const userPrompt = `Generate the letter with these details:
-
-Tenant: ${input.tenantName}
-Tenant address: ${input.tenantAddress || 'not provided'}
-Landlord: ${input.landlordName}
-Landlord address: ${input.landlordAddress || 'not provided'}
-Rental property: ${input.rentalAddress || 'not provided'}
-Move-in date: ${input.moveInDate || 'not provided'}
-Current monthly rent: ${input.currentRent ? `€${input.currentRent}` : 'not provided'}
-Situation: ${input.details}
-Today's date: ${today}
-
-Write a complete professional letter in formal German. Include:
-- Date and city top right
-- Sender address block top left
-- Recipient address block
-- Betreff bold subject line
-- Anrede formal using landlord name if provided
-- Body with correct legal citations
-- Fristsetzung where appropriate
-- Closing Hochachtungsvoll
-- Signature line with tenant name`;
-
   try {
-    console.log('Calling Groq API, dispute type:', input.disputeType);
+    console.log('Generating both DE and EN letters for dispute type:', input.disputeType);
 
-    const response = await groq.chat.completions.create({
-      // llama-3.3-70b produces excellent formal German — better than
-      // smaller models for legal register and BGB citations
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      max_tokens: 1500,
-      temperature: 0.3,
-    });
+    // Generate both letters in parallel — faster than sequential calls
+    const [deResponse, enResponse] = await Promise.all([
+      groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: buildUserPrompt(input, 'de') },
+        ],
+        max_tokens: 1500,
+        temperature: 0.3,
+      }),
+      groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: buildUserPrompt(input, 'en') },
+        ],
+        max_tokens: 1500,
+        temperature: 0.3,
+      }),
+    ]);
 
-    const letter = response.choices[0]?.message?.content;
+    const letterDE = deResponse.choices[0]?.message?.content;
+    const letterEN = enResponse.choices[0]?.message?.content;
 
-    if (!letter) {
-      console.error('Groq returned empty content');
+    if (!letterDE || !letterEN) {
+      console.error('Model returned empty content');
       return NextResponse.json(
         { error: 'Model returned an empty response. Please try again.' },
         { status: 500 }
       );
     }
 
-    console.log('Letter generated successfully, length:', letter.length);
-    return NextResponse.json({ letter });
+    return NextResponse.json({ letterDE, letterEN });
 
   } catch (error: any) {
     console.error('Groq API error:', {

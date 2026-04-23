@@ -4,17 +4,16 @@ import { useState } from 'react';
 import { LetterInput, DisputeType } from '@/types';
 import { T } from '@/data/translations';
 import { Language } from '@/hooks/useTranslation';
+import { AddressInput } from '@/components/AddressInput';
 
 interface Props {
   t: T;
   lang: Language;
 }
 
-// AI-powered letter generator.
-// The user picks their dispute type and fills in basic details.
-// We POST to /api/generate-letter which calls GPT-4o with a
-// dispute-specific system prompt grounded in the correct BGB paragraphs.
-// Temperature is kept low (0.3) so legal citations stay consistent.
+// AI letter generator — produces a formal German letter plus an English
+// reference version in parallel. The German letter is the one to send;
+// the English version helps expats understand what they are signing.
 export function LetterGenerator({ t, lang }: Props) {
   const [form, setForm] = useState<LetterInput>({
     disputeType: 'mietpreisbremse',
@@ -29,7 +28,9 @@ export function LetterGenerator({ t, lang }: Props) {
     language: lang,
   });
 
-  const [letter, setLetter] = useState('');
+  const [letterDE, setLetterDE] = useState('');
+  const [letterEN, setLetterEN] = useState('');
+  const [activeTab, setActiveTab] = useState<'de' | 'en'>('de');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -45,16 +46,23 @@ export function LetterGenerator({ t, lang }: Props) {
     }
     setError('');
     setLoading(true);
-    setLetter('');
+    setLetterDE('');
+    setLetterEN('');
+
     try {
       const res = await fetch('/api/generate-letter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, language: lang }),
       });
+
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Server error');
-      setLetter(data.letter);
+
+      setLetterDE(data.letterDE);
+      setLetterEN(data.letterEN);
+      // Default to German tab — that's the one to send
+      setActiveTab('de');
     } catch (e: any) {
       setError(e?.message || 'Failed to generate letter. Please try again.');
     } finally {
@@ -62,24 +70,25 @@ export function LetterGenerator({ t, lang }: Props) {
     }
   }
 
-  // Plain text download — universally readable, easy to paste into Word or email
-  function download() {
-    const blob = new Blob([letter], { type: 'text/plain' });
+  function download(content: string, suffix: string) {
+    const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mietrecht-${form.disputeType}.txt`;
+    a.download = `mietrecht-${form.disputeType}-${suffix}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   async function copy() {
-    await navigator.clipboard.writeText(letter);
+    const content = activeTab === 'de' ? letterDE : letterEN;
+    await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   const disputeOptions = Object.entries(t.disputeTypes) as [DisputeType, string][];
+  const hasLetters = letterDE && letterEN;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -87,8 +96,7 @@ export function LetterGenerator({ t, lang }: Props) {
         {t.letterDesc}
       </p>
 
-      {/* Dispute type — full-width button list so each option is fully readable
-          on any screen width. A dropdown would truncate the long German labels. */}
+      {/* Dispute type selection */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <label style={labelStyle}>{t.letterDisputeType}</label>
         {disputeOptions.map(([key, label]) => (
@@ -96,19 +104,15 @@ export function LetterGenerator({ t, lang }: Props) {
             key={key}
             onClick={() => update('disputeType', key)}
             style={{
-              padding: '11px 14px',
-              borderRadius: '10px',
-              textAlign: 'left',
-              border: '1.5px solid',
+              padding: '11px 14px', borderRadius: '10px',
+              textAlign: 'left', border: '1.5px solid',
               borderColor: form.disputeType === key ? '#0D5C63' : '#E5E7EB',
               background: form.disputeType === key ? '#E6F4F5' : 'white',
               color: form.disputeType === key ? '#0D5C63' : '#4B5563',
               fontSize: '13px',
               fontWeight: form.disputeType === key ? 700 : 400,
-              cursor: 'pointer',
-              fontFamily: 'var(--font-open-sans)',
-              transition: 'all 0.15s',
-              width: '100%',
+              cursor: 'pointer', fontFamily: 'var(--font-open-sans)',
+              transition: 'all 0.15s', width: '100%',
             }}
           >
             {label}
@@ -116,79 +120,99 @@ export function LetterGenerator({ t, lang }: Props) {
         ))}
       </div>
 
-      {/* Form fields — single column on mobile, two columns on wider screens.
-          CSS grid with auto-fit handles the breakpoint without media queries. */}
+      {/* Name fields — two column on wider screens, one on mobile */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
         gap: '12px',
       }}>
-        {[
-          { key: 'tenantName', label: t.letterTenantName },
-          { key: 'landlordName', label: t.letterLandlordName },
-          { key: 'tenantAddress', label: t.letterTenantAddress },
-          { key: 'landlordAddress', label: t.letterLandlordAddress },
-        ].map(({ key, label }) => (
-          <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={labelStyle}>{label}</label>
-            <input
-              type="text"
-              value={form[key as keyof LetterInput] as string}
-              onChange={(e) => update(key as keyof LetterInput, e.target.value)}
-              placeholder={label}
-              style={inputStyle}
-            />
-          </div>
-        ))}
-      </div>
-
-      {/* Full-width fields below the grid */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={labelStyle}>{t.letterRentalAddress}</label>
+          <label style={labelStyle}>{t.letterTenantName}</label>
           <input
             type="text"
-            value={form.rentalAddress}
-            onChange={(e) => update('rentalAddress', e.target.value)}
-            placeholder="Musterstraße 1, 10115 Berlin"
+            value={form.tenantName}
+            onChange={(e) => update('tenantName', e.target.value)}
+            placeholder={t.letterTenantName}
             style={inputStyle}
           />
         </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={labelStyle}>{t.letterMoveIn}</label>
-            <input
-              type="date"
-              value={form.moveInDate}
-              onChange={(e) => update('moveInDate', e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={labelStyle}>{t.letterCurrentRent}</label>
-            <input
-              type="number"
-              value={form.currentRent}
-              onChange={(e) => update('currentRent', e.target.value)}
-              placeholder="e.g. 1200"
-              style={inputStyle}
-            />
-          </div>
-        </div>
-
-        {/* Details textarea — the most important field.
-            The more specific the user is, the better the generated letter. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={labelStyle}>{t.letterDetails}</label>
-          <textarea
-            value={form.details}
-            onChange={(e) => update('details', e.target.value)}
-            rows={5}
-            placeholder={t.letterDetailsHint}
-            style={{ ...inputStyle, resize: 'vertical' }}
+          <label style={labelStyle}>{t.letterLandlordName}</label>
+          <input
+            type="text"
+            value={form.landlordName}
+            onChange={(e) => update('landlordName', e.target.value)}
+            placeholder={t.letterLandlordName}
+            style={inputStyle}
           />
         </div>
+      </div>
+
+      {/* Address fields — Google Places autocomplete */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: '12px',
+      }}>
+        <AddressInput
+          label={t.letterTenantAddress}
+          value={form.tenantAddress}
+          onChange={(val) => update('tenantAddress', val)}
+          placeholder="Musterstraße 1, 10115 Berlin"
+        />
+        <AddressInput
+          label={t.letterLandlordAddress}
+          value={form.landlordAddress}
+          onChange={(val) => update('landlordAddress', val)}
+          placeholder="Vermieterstraße 5, 10117 Berlin"
+        />
+      </div>
+
+      {/* Rental address */}
+      <AddressInput
+        label={t.letterRentalAddress}
+        value={form.rentalAddress}
+        onChange={(val) => update('rentalAddress', val)}
+        placeholder="Mietstraße 3, 10119 Berlin"
+      />
+
+      {/* Move-in date + current rent */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '12px',
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={labelStyle}>{t.letterMoveIn}</label>
+          <input
+            type="date"
+            value={form.moveInDate}
+            onChange={(e) => update('moveInDate', e.target.value)}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={labelStyle}>{t.letterCurrentRent}</label>
+          <input
+            type="number"
+            value={form.currentRent}
+            onChange={(e) => update('currentRent', e.target.value)}
+            placeholder="e.g. 1200"
+            style={inputStyle}
+          />
+        </div>
+      </div>
+
+      {/* Situation details — most important field */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={labelStyle}>{t.letterDetails}</label>
+        <textarea
+          value={form.details}
+          onChange={(e) => update('details', e.target.value)}
+          rows={5}
+          placeholder={t.letterDetailsHint}
+          style={{ ...inputStyle, resize: 'vertical' }}
+        />
       </div>
 
       <p style={{ fontSize: '12px', color: '#9CA3AF', fontStyle: 'italic' }}>
@@ -216,13 +240,67 @@ export function LetterGenerator({ t, lang }: Props) {
           transition: 'background 0.2s', width: '100%',
         }}
       >
-        {loading ? t.letterGenerating : t.letterGenerateBtn}
+        {loading ? t.letterGeneratingBoth : t.letterGenerateBtn}
       </button>
 
-      {/* Generated letter — serif font gives it a document feel
-          that matches what a real formal German letter looks like */}
-      {letter && (
+      {/* Letter output — two tabs: German (to send) and English (for reference) */}
+      {hasLetters && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+          {/* Tab switcher */}
+          <div style={{
+            display: 'flex', background: '#F3F4F6',
+            borderRadius: '10px', padding: '3px', gap: '3px',
+          }}>
+            <button
+              onClick={() => setActiveTab('de')}
+              style={{
+                flex: 1, padding: '8px',
+                borderRadius: '8px', border: 'none',
+                background: activeTab === 'de' ? '#0D5C63' : 'transparent',
+                color: activeTab === 'de' ? 'white' : '#6B7280',
+                fontSize: '13px', fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'var(--font-open-sans)',
+                transition: 'all 0.15s',
+              }}
+            >
+              {t.letterDE}
+            </button>
+            <button
+              onClick={() => setActiveTab('en')}
+              style={{
+                flex: 1, padding: '8px',
+                borderRadius: '8px', border: 'none',
+                background: activeTab === 'en' ? '#0D5C63' : 'transparent',
+                color: activeTab === 'en' ? 'white' : '#6B7280',
+                fontSize: '13px', fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'var(--font-open-sans)',
+                transition: 'all 0.15s',
+              }}
+            >
+              {t.letterEN}
+            </button>
+          </div>
+
+          {/* Context note for the active tab */}
+          {activeTab === 'de' && (
+            <div style={{
+              background: '#E6F4F5', borderRadius: '8px',
+              padding: '10px 14px', fontSize: '12px', color: '#0D5C63', fontWeight: 600,
+            }}>
+              This is the letter to send to your landlord. Review it carefully before sending.
+            </div>
+          )}
+          {activeTab === 'en' && (
+            <div style={{
+              background: '#FEF3E2', borderRadius: '8px',
+              padding: '10px 14px', fontSize: '12px', color: '#C07A1A', fontWeight: 600,
+            }}>
+              This is for your reference only. Do not send this — send the German version.
+            </div>
+          )}
+
+          {/* Letter content — serif font matches a real formal letter */}
           <div style={{
             background: '#F9FAFB', border: '1px solid #E5E7EB',
             borderRadius: '12px', padding: '20px',
@@ -230,15 +308,27 @@ export function LetterGenerator({ t, lang }: Props) {
             lineHeight: 1.9, color: '#1A1A1A', whiteSpace: 'pre-wrap',
             maxHeight: '500px', overflowY: 'auto',
           }}>
-            {letter}
+            {activeTab === 'de' ? letterDE : letterEN}
           </div>
 
-          {/* Action buttons stack on mobile, side by side on wider screens */}
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={download} style={{ ...actionBtnStyle('#0D5C63'), flex: '1 1 140px' }}>
-              {t.letterDownload}
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => download(letterDE, 'DE')}
+              style={{ ...actionBtnStyle('#0D5C63'), flex: '1 1 140px' }}
+            >
+              {t.letterDownloadDE}
             </button>
-            <button onClick={copy} style={{ ...actionBtnStyle(copied ? '#22C55E' : '#F4A035'), flex: '1 1 140px' }}>
+            <button
+              onClick={() => download(letterEN, 'EN')}
+              style={{ ...actionBtnStyle('#F4A035'), flex: '1 1 140px' }}
+            >
+              {t.letterDownloadEN}
+            </button>
+            <button
+              onClick={copy}
+              style={{ ...actionBtnStyle(copied ? '#22C55E' : '#6B7280'), flex: '1 1 100px' }}
+            >
               {copied ? t.letterCopied : t.letterCopy}
             </button>
           </div>

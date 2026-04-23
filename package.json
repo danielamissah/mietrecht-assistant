@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@googlemaps/js-api-loader": "^2.0.2",
     "@portabletext/react": "^6.0.3",
     "@sanity/client": "^7.21.0",
     "@sanity/image-url": "^2.1.1",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/google.maps": "^3.64.0",
     "@types/node": "^20.19.39",
     "@types/react": "^19",
     "@types/react-dom": "^19",
