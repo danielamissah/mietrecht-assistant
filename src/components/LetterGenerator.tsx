@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { LetterInput, DisputeType } from '@/types';
 import { T } from '@/data/translations';
-import { Language } from '@/hooks/useTranslation';
+import { Language } from '@/types';
 import { AddressInput } from '@/components/AddressInput';
 
 interface Props {
