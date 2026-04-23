@@ -1,26 +1,83 @@
 @import "tailwindcss";
 
+/* Design token system — single source of truth for all colours.
+   Changing --primary here updates every component automatically. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-open-sans: 'Open Sans', sans-serif;
+  --primary: #0D5C63;       /* dark teal — main brand colour */
+  --primary-light: #E6F4F5; /* teal tint for backgrounds and highlights */
+  --accent: #F4A035;        /* orange — slider thumbs, active values, badges */
+  --accent-light: #FEF3E2;  /* orange tint for result card backgrounds */
+  --text: #1A1A1A;
+  --text-muted: #6B7280;
+  --border: #E5E7EB;
+  --surface: #F4F6F7;       /* page background — slightly cooler than pure white */
+  --white: #FFFFFF;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+*  { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-open-sans);
+  color: var(--text);
+  background: var(--surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom range slider — browser defaults are ugly and inconsistent.
+   The orange fill is applied dynamically via JS (inline background gradient)
+   because CSS alone cannot style the filled portion cross-browser. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #D1D5DB;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #F4A035;
+  border: 3px solid white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #F4A035;
+  border: 3px solid white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+/* Focus states for text inputs — teal outline replaces browser default blue */
+input[type='text']:focus,
+input[type='date']:focus,
+input[type='number']:focus,
+textarea:focus {
+  border-color: #0D5C63 !important;
+  outline: none;
+}
+
+/* Remove native select arrow so we can use custom SVG chevron */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
 }
