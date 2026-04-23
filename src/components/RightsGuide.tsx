@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { T } from '@/data/translations';
+import { Language } from '@/types';
 
 interface Props {
   t: T;
+  lang: Language;
 }
 
 // Rights content in both languages, structured as Q&A pairs.
@@ -232,12 +234,12 @@ const RIGHTS_DE = [
   },
 ];
 
-export function RightsGuide({ t }: Props) {
+export function RightsGuide({ t, lang }: Props) {
   const [openItem, setOpenItem] = useState<string | null>(null);
 
   // Switch between language datasets based on the toggle state
-  const isDE = t.langToggle === 'EN';
-  const rights = isDE ? RIGHTS_DE : RIGHTS_EN;
+  const isDE = lang === 'de';
+  const rights = lang === 'de' ? RIGHTS_DE : RIGHTS_EN;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
