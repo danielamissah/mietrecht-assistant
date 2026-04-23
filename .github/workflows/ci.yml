@@ -71,3 +71,40 @@ jobs:
           name: nextjs-build
           path: .next/
           retention-days: 7
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Build the Docker image to verify it compiles correctly.
+      # We don't push to a registry here — just validate the build.
+      # In a real production setup this would push to ghcr.io or ECR.
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_SANITY_PROJECT_ID=placeholder \
+            --build-arg NEXT_PUBLIC_SANITY_DATASET=production \
+            --build-arg NEXT_PUBLIC_GOOGLE_PLACES_API_KEY=placeholder \
+            -t app:ci \
+            .
+
+      # Start the container and hit the health check to confirm it runs
+      - name: Verify container starts
+        run: |
+          docker run -d \
+            --name app-test \
+            -p 3000:3000 \
+            -e GROQ_API_KEY=placeholder \
+            app:ci
+
+          # Wait for the app to start
+          sleep 10
+
+          # Hit the health check endpoint
+          curl --fail http://localhost:3000/api/health || exit 1
+
+          docker stop app-test
