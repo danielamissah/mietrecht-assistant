@@ -1,5 +1,4 @@
 # Multi-stage Dockerfile for Mietrecht Assistant (Next.js + Groq API).
-# Same three-stage pattern as Minijob Calculator.
 # Environment variables (GROQ_API_KEY, NEXT_PUBLIC_SANITY_PROJECT_ID, etc.)
 # are injected at runtime — never baked into the image.
 
@@ -33,7 +32,7 @@ ENV NEXT_PUBLIC_SANITY_PROJECT_ID=$NEXT_PUBLIC_SANITY_PROJECT_ID
 ENV NEXT_PUBLIC_SANITY_DATASET=$NEXT_PUBLIC_SANITY_DATASET
 ENV NEXT_PUBLIC_GOOGLE_PLACES_API_KEY=$NEXT_PUBLIC_GOOGLE_PLACES_API_KEY
 
-RUN npm run build
+RUN npm run dev
 
 # ── Stage 3: Runner ───────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner

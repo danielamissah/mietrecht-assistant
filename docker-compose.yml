@@ -1,7 +1,4 @@
-# Docker Compose for Mietrecht Assistant.
-# Server-side secrets are loaded from .env.local via env_file.
-# Never commit .env.local — it is in .gitignore.
-# In production, inject these via your hosting provider's secret manager.
+
 
 version: '3.9'
 
@@ -18,6 +15,17 @@ services:
         NEXT_PUBLIC_GOOGLE_PLACES_API_KEY: ${NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}
     ports:
       - "3000:3000"
+    develop:
+      watch:
+        - path: ./package.json
+          action: rebuild
+        - path: ./next.config.js
+          action: rebuild
+        - path: ./package-lock.json
+          action: rebuild
+        - path: .
+          target: /app
+          action: sync
     # Server-side secrets injected at runtime — never in the image
     environment:
       - NODE_ENV=production
